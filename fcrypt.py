@@ -5,8 +5,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding as padding_asymmetric
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+import crypto_utils
 import file_utils
-from crypto_utils import generate_secret_key_iv, get_padded_data, get_unpadded_data
 
 
 class CryptoClass:
@@ -15,8 +15,8 @@ class CryptoClass:
 
         # password = b'CY6740' # If your private-keys need some password, please update the password here and uncomment this line (and comment the line 17)
         password = None
-        self.my_private_key = file_utils.read_private_key(filepath=my_privatekey_filepath, password=password)
-        self.target_public_key = file_utils.read_public_key(filepath=target_publickey_filepath)
+        self.my_private_key = crypto_utils.read_private_key(filepath=my_privatekey_filepath, password=password)
+        self.target_public_key = crypto_utils.read_public_key(filepath=target_publickey_filepath)
         self.target_filepath = plaintext_filepath
         self.encrypted_filepath = encrypted_filepath
         self.VERIFICATION_FAILED = -1
@@ -33,9 +33,9 @@ class CryptoClass:
         if not s_sign:
             raise Exception("[Custom Exception] Error in signing the payload. Please try again...")
 
-        plain_text = get_padded_data(content=plain_text)
+        plain_text = crypto_utils.get_padded_data(content=plain_text)
         # Generate the secret key and initialization vector for symmetric encryption
-        secret_key, initial_vector = generate_secret_key_iv()
+        secret_key, initial_vector = crypto_utils.generate_secret_key_iv()
         cipher = Cipher(
             algorithm=algorithms.AES(secret_key),
             mode=modes.CBC(initialization_vector=initial_vector),
@@ -55,7 +55,7 @@ class CryptoClass:
         )
         decryptor = cipher.decryptor()
         decrypted_text = decryptor.update(cipher_text) + decryptor.finalize()
-        decrypted_text = get_unpadded_data(content=decrypted_text)
+        decrypted_text = crypto_utils.get_unpadded_data(content=decrypted_text)
 
         # decrypted_text is supposed to be in plain text
         return file_utils.write_file(filepath=self.target_filepath, content=decrypted_text)
