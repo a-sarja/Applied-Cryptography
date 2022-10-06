@@ -14,7 +14,6 @@ def read_file(filepath):
 
 
 def write_file(filepath, content):
-
     # write/replace the contents of the file if exists.
     # If the file does not exist, then this function creates one and then writes data to it
     with open(filepath, "wb") as file:
@@ -24,24 +23,49 @@ def write_file(filepath, content):
 
 
 def read_private_key(filepath, password):
-    with open(filepath, "rb") as key_file:
-        private_key = serialization.load_pem_private_key(
-            key_file.read(),
-            password=password,
-            backend=default_backend()
-        )
+    try:
+        with open(filepath, "rb") as key_file:
+            private_key = serialization.load_pem_private_key(
+                key_file.read(),
+                password=password,
+                backend=default_backend()
+            )
+    except:
+        # If the file is not a PEM file, then it must be of DER format
+        with open(filepath, "rb") as key_file:
+            private_key = serialization.load_der_private_key(
+                key_file.read(),
+                password=password,
+                backend=default_backend()
+            )
 
     return private_key
 
 
 def read_public_key(filepath):
-    with open(filepath, "rb") as key_file:
-        public_key = serialization.load_pem_public_key(
-            key_file.read(),
-            backend=default_backend()
-        )
+    try:
+        with open(filepath, "rb") as key_file:
+            public_key = serialization.load_pem_public_key(
+                key_file.read(),
+                backend=default_backend()
+            )
+    except:
+        # If the file is not a PEM file, then it must be of DER format
+        with open(filepath, "rb") as key_file:
+            public_key = serialization.load_der_public_key(
+                key_file.read(),
+                backend=default_backend()
+            )
 
     return public_key
+
+
+def delete_file(filepath):
+
+    if not os.path.exists(filepath):
+        return
+
+    os.remove(path=filepath)
 
 
 class fileUtil:

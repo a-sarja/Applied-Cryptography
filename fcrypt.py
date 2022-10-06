@@ -13,7 +13,9 @@ class CryptoClass:
 
     def __init__(self, my_privatekey_filepath, target_publickey_filepath, plaintext_filepath, encrypted_filepath):
 
-        self.my_private_key = file_utils.read_private_key(filepath=my_privatekey_filepath, password=b'CY6740')
+        # password = b'CY6740' # If your private-keys need some password, please update the password here and uncomment this line (and comment the line 17)
+        password = None
+        self.my_private_key = file_utils.read_private_key(filepath=my_privatekey_filepath, password=password)
         self.target_public_key = file_utils.read_public_key(filepath=target_publickey_filepath)
         self.target_filepath = plaintext_filepath
         self.encrypted_filepath = encrypted_filepath
@@ -195,6 +197,8 @@ if __name__ == '__main__':
             if sign_verification == decrypto_object.VERIFICATION_SUCCESS:
                 print("Signature verified..")
             else:
+                # Delete/remove the file if the signature verification fails
+                file_utils.delete_file(filepath=result)
                 raise Exception("[Custom Exception] Signature verification failed..")
 
             print("Process completed... You can find the decrypted plaintext file at " + str(result))
