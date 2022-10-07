@@ -13,7 +13,7 @@ class CryptoClass:
 
     def __init__(self, my_privatekey_filepath, target_publickey_filepath, plaintext_filepath, encrypted_filepath):
 
-        # password = b'CY6740' # If your private-keys need some password, please update the password here and uncomment this line (and comment the line 17)
+        # password = b'CY6740'  # If your private-keys need some password, please update the password here and uncomment this line (and comment the line 17)
         password = None
         self.my_private_key = crypto_utils.read_private_key(filepath=my_privatekey_filepath, password=password)
         self.target_public_key = crypto_utils.read_public_key(filepath=target_publickey_filepath)
@@ -38,22 +38,28 @@ class CryptoClass:
         secret_key, initial_vector = crypto_utils.generate_secret_key_iv()
         cipher = Cipher(
             algorithm=algorithms.AES(secret_key),
-            mode=modes.CBC(initialization_vector=initial_vector),
+            mode=modes.GCM(initialization_vector=initial_vector),
             backend=default_backend()
         )
         encryptor = cipher.encryptor()
+
+        encryptor.authenticate_additional_data(b'authenticated but not encrypted')
+
         cipher_text = encryptor.update(plain_text) + encryptor.finalize()
-        return secret_key, initial_vector, s_sign, cipher_text
+        return secret_key, initial_vector, encryptor.tag, s_sign, cipher_text
 
     # Function to perform Symmetric Decryption using the `shared_secret` and `shared initialization_v`
-    def decrypt_symmetric(self, cipher_text, shared_secret, shared_iv):
+    def decrypt_symmetric(self, cipher_text, shared_secret, shared_iv, tag_from_encryption):
 
         cipher = Cipher(
             algorithm=algorithms.AES(shared_secret),
-            mode=modes.CBC(initialization_vector=shared_iv),
+            mode=modes.GCM(shared_iv, tag_from_encryption),
             backend=default_backend()
         )
         decryptor = cipher.decryptor()
+
+        decryptor.authenticate_additional_data(b'authenticated but not encrypted')
+
         decrypted_text = decryptor.update(cipher_text) + decryptor.finalize()
         decrypted_text = crypto_utils.get_unpadded_data(content=decrypted_text)
 
@@ -61,7 +67,7 @@ class CryptoClass:
         return file_utils.write_file(filepath=self.target_filepath, content=decrypted_text)
 
     # Function to perform asymmetrical encryption using receiver's public key (happens on the sender's side)
-    def encrypt_asymmetric(self, payload, symmetric_encrypted_data, signature):
+    def encrypt_asymmetric(self, payload, symmetric_encrypted_data, signature, e_tag):
 
         if not self.target_public_key:
             raise Exception("[Custom Exception] Error in reading the receiver's public key. Please try again..")
@@ -77,7 +83,7 @@ class CryptoClass:
             )
         )
 
-        return file_utils.write_file(filepath=self.encrypted_filepath, content=encrypted_content + signature + symmetric_encrypted_data)
+        return file_utils.write_file(filepath=self.encrypted_filepath, content=encrypted_content + e_tag + signature + symmetric_encrypted_data)
 
     # Function to perform asymmetric decryption using receiver's private key (happens on the receiver's side)
     def decrypt_asymmetric(self):
@@ -89,9 +95,10 @@ class CryptoClass:
         if not payload_asymmetric_encrypted:
             raise Exception("[Custom Exception] File does not exist..")
 
-        # Retrieve the sender_signature, and symmetrically encrypted data
-        signature = payload_asymmetric_encrypted[512:1024]
-        data_for_symmetric_decryption = payload_asymmetric_encrypted[1024:]
+        # Retrieve the sender_signature, encryptor_tag, and symmetrically encrypted data
+        encrypt_tag = payload_asymmetric_encrypted[512:528]
+        signature = payload_asymmetric_encrypted[528:1040]
+        data_for_symmetric_decryption = payload_asymmetric_encrypted[1040:]
         payload_asymmetric_encrypted = payload_asymmetric_encrypted[:512]
 
         asymmetric_decrypted_content = self.my_private_key.decrypt(
@@ -105,7 +112,7 @@ class CryptoClass:
             )
         )
 
-        return asymmetric_decrypted_content, signature, data_for_symmetric_decryption
+        return asymmetric_decrypted_content, signature, data_for_symmetric_decryption, encrypt_tag
 
     def sign_payload(self, payload):
 
@@ -164,13 +171,13 @@ if __name__ == '__main__':
             crypto_object = CryptoClass(my_privatekey_filepath=sender_private_key_path, target_publickey_filepath=receiver_public_key_path, plaintext_filepath=plain_textfile_path, encrypted_filepath=cipher_textfile_path)
 
             file_content = file_utils.read_file(filepath=plain_textfile_path)  # Plain text to be encrypted
-            s_key, i_vector, s_signature, c_text = crypto_object.encrypt_symmetric(plain_text=file_content)
+            s_key, i_vector, encryptor_tag, s_signature, c_text = crypto_object.encrypt_symmetric(plain_text=file_content)
             payload_for_asymmetric_encryption = s_key + i_vector  # Payload structure: [32 byte secret-key][16 byte i_v]
 
-            result = crypto_object.encrypt_asymmetric(payload=payload_for_asymmetric_encryption, symmetric_encrypted_data=c_text, signature=s_signature)
+            result = crypto_object.encrypt_asymmetric(payload=payload_for_asymmetric_encryption, symmetric_encrypted_data=c_text, signature=s_signature, e_tag=encryptor_tag)
             print("Process completed... You can find the encrypted ciphertext file at " + str(result))
 
-        if args.decrypt:
+        elif args.decrypt:
             print("Decryption process started...")
 
             input_arguments = args.decrypt[0]
@@ -184,12 +191,13 @@ if __name__ == '__main__':
 
             decrypto_object = CryptoClass(my_privatekey_filepath=receiver_private_key_path, target_publickey_filepath=sender_public_key_path, plaintext_filepath=target_filepath, encrypted_filepath=cipher_textfile_path)
 
-            # [asymmetrically-encrypted-secret][asymmetrically-encrypted-iv][signature][symmetrically-encrypted-message]
-            decrypted_content, sender_signature, symmetric_data = decrypto_object.decrypt_asymmetric()
+            # [asymmetrically-encrypted-secret][asymmetrically-encrypted-iv][encryptor_tag][signature][symmetrically-encrypted-message]
+            decrypted_content, sender_signature, symmetric_data, tag = decrypto_object.decrypt_asymmetric()
+
             s_key = decrypted_content[0:32]
             s_iv = decrypted_content[32:48]
 
-            result = decrypto_object.decrypt_symmetric(cipher_text=symmetric_data, shared_secret=s_key, shared_iv=s_iv)
+            result = decrypto_object.decrypt_symmetric(cipher_text=symmetric_data, shared_secret=s_key, shared_iv=s_iv, tag_from_encryption=tag)
 
             # Verify the sender signature
             decrypted_plaintext = file_utils.read_file(filepath=result)
